@@ -1,19 +1,29 @@
 name: Go
 
 on:
-  workflow_dispatch: {}
-  push:
-    tags:
-      - "*-artifacts"
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      commitish:
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      commitish:
+        type: string
+        required: true
+    outputs:
+      run_id:
+        value: "${{ github.run_id }}"
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v6
+      with:
+        fetch-tags: true
+
+    - run: git checkout ${{ inputs.commitish }}
 
     - name: Import variables
       run: |

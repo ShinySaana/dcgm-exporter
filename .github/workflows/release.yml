@@ -1,42 +1,55 @@
-name: Release
+name: Artifact release
 
 on:
-  workflow_run:
-    workflows: ["Go"]
-    types:
-      - completed
+  workflow_dispatch:
+    inputs:
+      original_tag:
+        required: true
+
 
 permissions:
   contents: write
   actions: read
 
 jobs:
-  release:
-    if: >
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      endsWith(github.event.workflow_run.head_branch, '-artifacts')
+  tag:
     runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: "${{ inputs.original_tag }}"
 
+    - name: Create and push artifact tag
+      run: |
+        git tag "${{ inputs.original_tag }}-artifacts"
+        git push origin "${{ inputs.original_tag }}-artifacts"
+
+  build:
+    needs: tag
+    uses: ShinySaana/dcgm-exporter/.github/workflows/go.yml@release
+    with:
+      commitish: "${{ inputs.original_tag }}-artifacts"
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
     steps:
       - name: Get tag name
         id: tag
         run: |
-          echo "ARTIFACT_TAG=${GITHUB_EVENT_WORKFLOW_RUN_HEAD_BRANCH#refs/tags/}" >> $GITHUB_ENV
-        env:
-          GITHUB_EVENT_WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          echo "ARTIFACT_TAG=${{ inputs.original_tag }}-artifacts" >> $GITHUB_ENV
 
       - name: Get original tag
         id: original_tag
         run: |
-          echo ORIGINAL_TAG="${ARTIFACT_TAG%-artifacts}" >> $GITHUB_ENV
+          echo ORIGINAL_TAG="${{ inputs.original_tag }}" >> $GITHUB_ENV
 
       - name: Download artifacts from build
         uses: actions/download-artifact@v4
         with:
           path: /tmp/artifacts
 
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ needs.build.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Display structure of downloaded files
