@@ -1,8 +1,10 @@
 name: Go
 
 on:
+  workflow_dispatch: {}
   push:
-    branches: [ main ]
+    tags:
+      - "*-artifacts"
   pull_request:
     branches: [ main ]
 
@@ -13,13 +15,31 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Import variables
+      run: |
+        source ./hack/VERSION
+        echo "DCGM_VERSION=${NEW_DCGM_VERSION}" >> $GITHUB_ENV
+        echo "EXPORTER_VERSION=${NEW_EXPORTER_VERSION}" >> $GITHUB_ENV
+
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
         go-version: 1.24
 
+    - name: Lint
+      run: make check-format
+
     - name: Build
       run: make binary
 
-    - name: Lint
-      run: make check-format
+    - name: Package artifact
+      run: |
+        mkdir /tmp/dcgm-exporter-${DCGM_VERSION}-${EXPORTER_VERSION}.linux-amd64
+        mv cmd/dcgm-exporter/dcgm-exporter /tmp/dcgm-exporter-${DCGM_VERSION}-${EXPORTER_VERSION}.linux-amd64/dcgm-exporter
+        cd /tmp
+        tar cvf dcgm-exporter-${DCGM_VERSION}-${EXPORTER_VERSION}.linux-amd64.tar.gz dcgm-exporter-${DCGM_VERSION}-${EXPORTER_VERSION}.linux-amd64
+
+    - uses: actions/upload-artifact@v4
+      with:
+        path: "/tmp/dcgm-exporter-${{ env.DCGM_VERSION}}-${{ env.EXPORTER_VERSION }}.linux-amd64.tar.gz"
+        name: "dcgm-exporter.linux-amd64.tar.gz"

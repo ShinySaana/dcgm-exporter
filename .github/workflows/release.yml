@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Go"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      endsWith(github.event.workflow_run.head_branch, '-artifacts')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get tag name
+        id: tag
+        run: |
+          echo "ARTIFACT_TAG=${GITHUB_EVENT_WORKFLOW_RUN_HEAD_BRANCH#refs/tags/}" >> $GITHUB_ENV
+        env:
+          GITHUB_EVENT_WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+
+      - name: Get original tag
+        id: original_tag
+        run: |
+          echo ORIGINAL_TAG="${ARTIFACT_TAG%-artifacts}" >> $GITHUB_ENV
+
+      - name: Download artifacts from build
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Display structure of downloaded files
+        run: ls -R /tmp/artifacts
+
+      - name: Create draft release
+        run: |
+          gh release create \
+            --repo ${{ github.repository }} \
+            --draft \
+            --notes 'See the [original release](https://github.com/NVIDIA/dcgm-exporter/releases/tag/${{ env.ORIGINAL_TAG }}).' \
+            --title "${{ env.ORIGINAL_TAG }}" \
+            --verify-tag \
+            "${{ env.ARTIFACT_TAG }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload linux-amd64 artifact
+        run: |
+          gh release upload \
+            --repo ${{ github.repository }} \
+            "${{ env.ARTIFACT_TAG }}" \
+            /tmp/artifacts/dcgm-exporter.linux-amd64.tar.gz/dcgm-exporter-${{ env.ORIGINAL_TAG }}.linux-amd64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish release
+        run: |
+          gh release edit \
+            --draft=false \
+            --repo ${{ github.repository }} \
+            "${{ env.ARTIFACT_TAG }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
